@@ -1,0 +1,105 @@
+access_key = "modify_here"
+secret_key = "modify_here"
+import pandas as pd, pyupbit, time, math, requests
+def get_portfolio():
+   while True:
+        upbit_object = pyupbit.Upbit(access_key, secret_key)
+        balance_list = upbit_object.get_balances()
+        balance_df = pd.DataFrame(balance_list)
+        valid_list = []
+        expired_list = []
+        for i in range(len(balance_df)):
+            try:
+                ticker = balance_df.iloc[i]['currency']
+                ticker_krw = "KRW-" + ticker
+                check = get_current_price(ticker_krw)
+                if check is None: expired_list.append(ticker_krw)
+                else: valid_list.append(ticker)
+            except Exception as E:
+                print("check_portfolio error:", E)
+                pass
+        balance_df = balance_df[balance_df['currency'].isin(valid_list)]
+        return balance_df, expired_list
+def get_current_price(ticker_krw):
+    attempt = 0
+    max_attempts = 3
+    while attempt < max_attempts:
+        try:
+            current_krw = pyupbit.get_current_price(ticker_krw)
+            if current_krw is not None:
+                last_price = current_krw
+                return last_price
+        except Exception as e:
+            time.sleep(0.3)
+            pass
+        attempt += 1
+    return None
+def get_warning_tickers():
+   try:
+       url = "https://api.upbit.com/v1/market/all?isDetails=true"
+       headers = {"accept": "application/json"}
+       res = requests.get(url, headers=headers)
+       url_list = res.json()
+       url_df = pd.DataFrame(url_list)
+       market_event_list = url_df['market_event']
+       warning_list = []
+       for i in range(0, len(url_df)):
+           if market_event_list[i]['warning'] is True:
+               waring_ticker = url_df.iloc[i]['market']
+               ticker_krw = "KRW-" + waring_ticker[4:]
+               warning_list.append(ticker_krw)
+       return warning_list
+   except Exception as e:
+       print("get_tickers error", e)
+       pass
+def sell_specific_ticker(ticker_krw):
+    try:
+        ticker = ticker_krw.replace("KRW-", "")
+        upbit_object = pyupbit.Upbit(access_key, secret_key)
+        balance_list = upbit_object.get_balances()
+        balance_df = pd.DataFrame(balance_list)
+        for i in range(0, len(balance_df)):
+            if balance_df.iloc[i]["currency"] == ticker:
+                upbit_object.sell_market_order("KRW-" + ticker,
+                                          balance_df.iloc[i]["balance"])
+    except Exception as e:
+        print("sell_specific error", e)
+def sell_by_yield(balance_df, target_percent, sell_proportion):
+    for i in range(len(balance_df)):
+        try:
+            ticker = balance_df.iloc[i]['currency']
+            ticker_krw = "KRW-" + ticker
+            current_krw = get_current_price(ticker_krw)
+            expense_krw = balance_df.iloc[i]["avg_buy_price"]
+            volume = balance_df.iloc[i]["balance"]
+            yield_percent = round((float(current_krw) - float(expense_krw)) / float(expense_krw) * 100,2)
+            if yield_percent > target_percent:
+                sell_volume = float(volume) * (float(yield_percent) * float(sell_proportion) / 10000)
+                if float(volume) > float(sell_volume):
+                    sell_money = math.ceil(float(sell_volume) * float(current_krw))
+                    if sell_money > 5000:
+                        upbit_object = pyupbit.Upbit(access_key, secret_key)
+                        upbit_object.sell_market_order(ticker_krw, sell_volume)
+        except Exception as E:
+            print("sell_by_yield error", E)
+            continue
+def final(target_percent, sell_proportion):
+   try:
+       warning_tickers = get_warning_tickers()
+       for ticker in warning_tickers:
+           sell_specific_ticker(ticker)
+       balance_list, expired_list = get_portfolio()
+       sell_by_yield(balance_list, target_percent, sell_proportion)
+   except Exception as e:
+       print("final error", e)
+       pass
+
+while True:
+   final(5, 50)
+
+
+
+
+
+
+
