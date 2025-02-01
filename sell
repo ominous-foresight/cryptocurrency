@@ -22,7 +22,7 @@ def get_portfolio():
         return balance_df, expired_list
 def get_current_price(ticker_krw):
     attempt = 0
-    max_attempts = 3
+    max_attempts = 10
     while attempt < max_attempts:
         try:
             current_krw = pyupbit.get_current_price(ticker_krw)
